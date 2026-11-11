@@ -48,6 +48,7 @@ def main(transport: Transport, host: str, port: int, env_file: Optional[Path]) -
     """Alpaca MCP Server — Trading API integration for Model Context Protocol."""
     if env_file is not None:
         from dotenv import load_dotenv
+
         load_dotenv(env_file, override=False)
 
     mcp_auth_token = os.environ.get("MCP_AUTH_TOKEN", "").strip()
