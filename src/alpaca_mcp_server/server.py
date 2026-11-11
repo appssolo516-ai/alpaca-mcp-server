@@ -17,6 +17,7 @@ from typing import Any
 
 import httpx
 from fastmcp import FastMCP
+from fastmcp.server.auth.providers.jwt import StaticTokenVerifier
 from fastmcp.server.providers.openapi.routing import MCPType
 
 from .readme_docs import ReadMeClientFactory, register_readme_docs_tools
@@ -114,8 +115,25 @@ def _build_auth_headers() -> dict[str, str]:
 
 
 def _get_trading_base_url() -> str:
-    paper = os.environ.get("ALPACA_PAPER_TRADE", "true").lower() in ("true", "1", "yes")
-    return TRADING_API_BASE_URLS["paper" if paper else "live"]
+    """Use Paper by default; require two explicit switches before Live."""
+    paper_setting = os.environ.get("ALPACA_PAPER_TRADE", "true").strip().lower()
+
+    if paper_setting in ("true", "1", "yes"):
+        return TRADING_API_BASE_URLS["paper"]
+
+    if paper_setting not in ("false", "0", "no"):
+        raise RuntimeError(
+            "Invalid ALPACA_PAPER_TRADE value. Use true for Paper or false for Live."
+        )
+
+    live_enabled = os.environ.get("ALPACA_ENABLE_LIVE_TRADING", "").strip().lower()
+    if live_enabled not in ("true", "1", "yes"):
+        raise RuntimeError(
+            "Live trading is blocked. Paper mode is the default. Live requires both "
+            "ALPACA_PAPER_TRADE=false and ALPACA_ENABLE_LIVE_TRADING=true."
+        )
+
+    return TRADING_API_BASE_URLS["live"]
 
 
 def _ensure_scheme(url: str) -> str:
@@ -143,6 +161,21 @@ def build_server(
     readme_client_factory: ReadMeClientFactory | None = None,
 ) -> FastMCP:
     """Construct the Alpaca MCP server from OpenAPI specs."""
+    mcp_auth_token = os.environ.get("MCP_AUTH_TOKEN", "").strip()
+    if len(mcp_auth_token) < 32:
+        raise RuntimeError(
+            "MCP_AUTH_TOKEN is required and must contain at least 32 characters."
+        )
+
+    auth = StaticTokenVerifier(
+        tokens={
+            mcp_auth_token: {
+                "client_id": "alpaca-paper-agent",
+                "scopes": [],
+            }
+        }
+    )
+
     active_toolsets = _parse_toolsets()
     spec_ops = get_active_operations(active_toolsets)
 
@@ -170,7 +203,7 @@ def build_server(
             for c in clients:
                 await c.aclose()
 
-    main = FastMCP("Alpaca MCP Server", lifespan=lifespan)
+    main = FastMCP("Alpaca MCP Server", lifespan=lifespan, auth=auth)
     main.add_middleware(TrustBoundaryMiddleware())
 
     if trading_client is not None:
@@ -226,3 +259,4 @@ def _register_market_data_overrides(server: FastMCP, data_client: httpx.AsyncCli
     from .market_data_overrides import register_market_data_tools
 
     register_market_data_tools(server, data_client)
+    
