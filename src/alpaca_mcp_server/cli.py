@@ -19,7 +19,7 @@ if len(sys.argv) > 1 and sys.argv[1] == "serve":
 
 
 def _default_port() -> int:
-    """HTTP bind port; honors Render/Fly-style ``PORT`` when ``--port`` is omitted."""
+    """HTTP bind port; honors Render/Fly-style PORT when --port is omitted."""
     return int(os.environ.get("PORT", "8000"))
 
 
@@ -48,8 +48,15 @@ def main(transport: Transport, host: str, port: int, env_file: Optional[Path]) -
     """Alpaca MCP Server — Trading API integration for Model Context Protocol."""
     if env_file is not None:
         from dotenv import load_dotenv
-
         load_dotenv(env_file, override=False)
+
+    mcp_auth_token = os.environ.get("MCP_AUTH_TOKEN", "").strip()
+    if len(mcp_auth_token) < 32:
+        click.echo(
+            "Error: MCP_AUTH_TOKEN is required and must contain at least 32 characters.",
+            err=True,
+        )
+        sys.exit(1)
 
     if not os.environ.get("ALPACA_API_KEY") or not os.environ.get("ALPACA_SECRET_KEY"):
         click.echo(
